@@ -1,6 +1,8 @@
 const maticSubgraph =
 	'https://api.thegraph.com/subgraphs/name/superfluid-finance/protocol-v1-matic'
 
+const stables = ['DAIx', 'USDCx']
+
 const daix = {
 	id: '0x1305f6b6df9dc47159d12eb7ac2804d4a33173c2',
 	name: 'Super DAI (PoS)',
@@ -139,3 +141,4 @@ const contracts = [
 
 exports.contracts = contracts
 exports.maticSubgraph = maticSubgraph
+exports.stables = stables

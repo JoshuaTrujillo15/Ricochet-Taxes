@@ -1,6 +1,6 @@
 const axios = require('axios')
 const BigNumber = require('bignumber.js')
-const { contracts, maticSubgraph } = require('./constants')
+const { contracts, maticSubgraph, stables } = require('./constants')
 
 // ----- ----- -----
 // HELPERS
@@ -28,6 +28,10 @@ function flowHasClosed(flowUpdates, startTime, endTime) {
 	return hasClosed
 }
 
+function streamsToStableCoin(contract) {
+	return contract.market.endsWith('DAI') || contract.market.endsWith('USDC')
+}
+
 // ----- ----- -----
 // GRAPHQL QUERY BUILDERS
 // ----- ----- -----
@@ -49,7 +53,6 @@ const buildFlowUpdateQuery = (
     ) {
         id
         timestamp
-        transactionHash
 		flowRate
         oldFlowRate
         type
@@ -67,14 +70,9 @@ const buildDistributionQuery = (contractAddress, timestampPaginator) =>
             timestamp_gt: ${timestampPaginator}
         }
     ) {
-        indexId
         timestamp
-        transactionHash
         oldIndexValue
         newIndexValue
-        index {
-            totalUnits
-        }
     }
 }`
 
@@ -130,7 +128,7 @@ async function getDistributions(contractAddress, timestampPaginator = 0) {
 	return allDistributions
 }
 
-function computeSwaps(contract, flowUpdates, distributions) {
+function computeSwaps(flowUpdates, distributions, toStable) {
 	// sanity check
 	if (distributions[0].timestamp !== flowUpdates[0].timestamp) {
 		throw new Error(
@@ -150,23 +148,29 @@ function computeSwaps(contract, flowUpdates, distributions) {
 		)
 
 		const unitsOwned = adjustForUnits(lastFlowRate)
-		const relativeShare = unitsOwned.dividedBy(
-			new BigNumber(dist.index.totalUnits)
-		)
-		console.log({
-			unitsOwned: unitsOwned.toString(),
-			totalUnits: dist.index.totalUnits,
-			relativeShare: relativeShare.toString()
-		})
 		const distributionAmount = new BigNumber(dist.newIndexValue).minus(
 			new BigNumber(dist.oldIndexValue)
 		)
 		// subtracting timestamps will never overflow, so this is safe.
 		const tokenAIn = lastFlowRate.multipliedBy(
-			lastDistributionTimestamp - dist.timestamp
+			dist.timestamp - lastDistributionTimestamp
 		)
-		const tokenBOut = distributionAmount.multipliedBy(relativeShare)
-		// const exchangeRate = tokenAIn.abs().dividedBy(tokenBOut).toString()
+		const tokenBOut = distributionAmount.multipliedBy(unitsOwned)
+
+		// get fiat conversions
+		// assumption is the market either streams to or from a stable
+		// tokenB should be adjusted for 2% fee
+		let tokenAFiat, tokenBFiat
+		if (toStable) {
+			tokenAFiat = tokenBOut.dividedBy(tokenAIn).toFixed(18)
+			tokenBFiat = adjustForDecimal(tokenBOut).multipliedBy(1.02)
+		} else {
+			tokenAFiat = adjustForDecimal(tokenAIn)
+			tokenBFiat = tokenAIn
+				.dividedBy(tokenBOut)
+				.multipliedBy(1.02)
+				.toFixed(18)
+		}
 
 		if (
 			flowHasClosed(
@@ -180,17 +184,16 @@ function computeSwaps(contract, flowUpdates, distributions) {
 			swaps.push({
 				tokenAIn: adjustForDecimal(tokenAIn),
 				tokenBOut: bigZero.toString(),
-				tokenA: contract.tokenA.id,
-				tokenB: contract.tokenB.id
+				tokenAFiat,
+				tokenBFiat: bigZero.toString()
 			})
 			lastFlowRate = bigZero
 		} else {
 			swaps.push({
 				tokenAIn: adjustForDecimal(tokenAIn),
 				tokenBOut: adjustForDecimal(tokenBOut),
-				// exchangeRate: exchangeRate,
-				tokenA: contract.tokenA.id,
-				tokenB: contract.tokenB.id
+				tokenAFiat,
+				tokenBFiat
 			})
 
 			// only update flowRate if it changed. flowRate changes trigger
@@ -214,6 +217,7 @@ async function getRicochetSwapData(walletAddress) {
 	// iterate ricochet markets
 	let ricochetSwaps = []
 	for await (const contract of contracts) {
+		console.log('querying:', contract.market)
 		try {
 			const flowUpdates = await getFlowUpdates(
 				walletAddress,
@@ -226,7 +230,8 @@ async function getRicochetSwapData(walletAddress) {
 				contract.address,
 				startTime
 			)
-			const swaps = computeSwaps(contract, flowUpdates, distributions)
+			const toStable = streamsToStableCoin(contract)
+			const swaps = computeSwaps(flowUpdates, distributions, toStable)
 			ricochetSwaps.push({
 				contract,
 				swaps
