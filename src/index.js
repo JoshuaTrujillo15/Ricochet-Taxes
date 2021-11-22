@@ -10,17 +10,21 @@ const ADDRESS = process.env.ADDRESS
 async function main() {
 	const ricochetSwapData = await getRicochetSwapData(ADDRESS)
 	fs.writeFile(
-		'./swapData.json',
+		`./swapData/${ADDRESS}.json`,
 		JSON.stringify(ricochetSwapData, null, 4),
 		error => {
 			if (error) throw error
 			console.log('JSON Written.')
 		}
 	)
-	fs.writeFile('./swapData.csv', jsonToCsv(ricochetSwapData), error => {
-		if (error) throw error
-		console.log('CSV Written.')
-	})
+	fs.writeFile(
+		`./swapData/${ADDRESS}.csv`,
+		jsonToCsv(ricochetSwapData),
+		error => {
+			if (error) throw error
+			console.log('CSV Written.')
+		}
+	)
 }
 
 main()

@@ -163,7 +163,7 @@ function computeSwaps(flowUpdates, distributions, toStable) {
 		let tokenAFiat, tokenBFiat
 		if (toStable) {
 			tokenAFiat = tokenBOut.dividedBy(tokenAIn).toFixed(18)
-			tokenBFiat = adjustForDecimal(tokenBOut).multipliedBy(1.02)
+			tokenBFiat = adjustForDecimal(tokenBOut.multipliedBy(1.02))
 		} else {
 			tokenAFiat = adjustForDecimal(tokenAIn)
 			tokenBFiat = tokenAIn
