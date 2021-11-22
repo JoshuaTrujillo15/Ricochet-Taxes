@@ -27,3 +27,13 @@ yarn start
 
 You should have two new files, `swapData.json` and `swapData.csv`, depending
 on your needs.
+
+To validate, run:
+
+```bash
+yarn validate
+```
+
+This should return the net delta in tokenA and tokenB balances for each market,
+given the same address. _NOTE_ you must run the script first, as it validates
+against the address in the .env file.
